@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>근무시간 계산기</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background: #f6f6f6; }
+    #controls { margin-bottom: 1rem; }
+    #controls input { width: 200px; padding: 0.25rem; }
+    #controls button { margin-left: 0.5rem; padding: 0.5rem 1rem; }
+    table { border-collapse: collapse; width: 100%; background: #fff; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
+    th, td { padding: 0.75rem; border: 1px solid #ccc; text-align: center; vertical-align: middle; }
+    th { background: #e1f3e0; }
+    .input-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    input[type="time"] {
+      width: 160px; text-align: center; font-size: 1rem;
+    }
+    .reset-btn {
+      padding: 2px 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    tfoot td { font-weight: bold; background: #d4edda; }
+    .suggestion { background: #fff3cd; }
+    .warning { color: red; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label><strong>사용자 ID:</strong>
+      <input type="text" id="userId" placeholder="예: user123" />
+    </label>
+    <button onclick="loadUserData()">불러오기</button>
+    <button onclick="saveUserData()">저장</button>
+    <button onclick="resetTimeInputs()">전체 초기화</button>
+  </div>
+
+  <h2>주간 근무시간 계산기</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>요일</th>
+        <th>출근 시간</th>
+        <th>퇴근 시간</th>
+        <th>근무 시간<br><small>(휴게시간 제외)</small></th>
+        <th class="suggestion">추천 퇴근시간</th>
+      </tr>
+    </thead>
+    <tbody id="work-table"></tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4">총 근무 시간 (월~금)</td>
+        <td id="totalAll">0시간 0분</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <script>
+    const weekdays = ['월','화','수','목','금'];
+    const tbody = document.getElementById('work-table');
+    const totalAllTd = document.getElementById('totalAll');
+
+    weekdays.forEach((day, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${day}</td>
+        <td>
+          <div class="input-group">
+            <input type="time" class="start" data-index="${idx}" />
+            <button class="reset-btn" onclick="clearInput(${idx}, 'start')">❌</button>
+          </div>
+        </td>
+        <td>
+          <div class="input-group">
+            <input type="time" class="end" data-index="${idx}" />
+            <button class="reset-btn" onclick="clearInput(${idx}, 'end')">❌</button>
+          </div>
+        </td>
+        <td class="result">-</td>
+        <td class="suggest">-</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    function toMin(h,m){ return h*60 + m; }
+    function fmtHM(mins){
+      const h = Math.floor(mins/60), m = mins%60;
+      return `${h}시간 ${m}분`;
+    }
+    function fmtClock(mins){
+      mins %= 1440;
+      const h = String(Math.floor(mins/60)).padStart(2,'0'),
+            m = String(mins%60).padStart(2,'0');
+      return `${h}:${m}`;
+    }
+
+    function getUserId() {
+      const id = document.getElementById('userId').value.trim();
+      if (!/^[a-zA-Z0-9]+$/.test(id)) {
+        alert("ID는 영어 또는 숫자만 입력해주세요.");
+        return null;
+      }
+      return id;
+    }
+
+    function saveUserData() {
+      const id = getUserId();
+      if (!id) return;
+      const data = [];
+      document.querySelectorAll('#work-table tr').forEach(row => {
+        data.push({
+          start: row.querySelector('.start').value,
+          end:   row.querySelector('.end').value
+        });
+      });
+      localStorage.setItem('worklog_'+id, JSON.stringify(data));
+      alert('저장되었습니다.');
+    }
+
+    function loadUserData() {
+      const id = getUserId();
+      if (!id) return;
+      const raw = localStorage.getItem('worklog_'+id);
+      if (!raw) {
+        alert('저장된 데이터가 없습니다.');
+        return;
+      }
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data) || data.length !== 5) {
+        alert('데이터 형식이 올바르지 않습니다.');
+        return;
+      }
+      document.querySelectorAll('#work-table tr').forEach((row,i) => {
+        row.querySelector('.start').value = data[i].start || '';
+        row.querySelector('.end').value   = data[i].end   || '';
+      });
+      calculateTime();
+    }
+
+    function resetTimeInputs() {
+      document.querySelectorAll('#work-table input[type="time"]').forEach(input => input.value = '');
+      calculateTime();
+    }
+
+    function clearInput(index, type) {
+      const selector = `input.${type}[data-index="${index}"]`;
+      const input = document.querySelector(selector);
+      if (input) input.value = '';
+      calculateTime();
+    }
+
+    function calculateTime(){
+      const rows = document.querySelectorAll('#work-table tr');
+      const worked = [];
+
+      rows.forEach(row => {
+        const s = row.querySelector('.start').value;
+        const e = row.querySelector('.end').value;
+        const td = row.querySelector('.result');
+        let raw=0, br=0, w=0;
+
+        if (s && e) {
+          const [sh,sm] = s.split(':').map(Number);
+          const [eh,em] = e.split(':').map(Number);
+          raw = toMin(eh,em) - toMin(sh,sm);
+          if (raw<0) raw+=1440;
+          if (raw>4*60) br++;
+          if (raw>8*60+30) br++;
+          if (raw>13*60) br++;
+          w = raw - br*30;
+          td.textContent = fmtHM(w);
+        } else td.textContent = '-';
+
+        worked.push(w);
+      });
+
+      const totalThu = worked.slice(0,4).reduce((a,b)=>a+b,0);
+      const totalAll = worked.reduce((a,b)=>a+b,0);
+
+      totalAllTd.textContent = fmtHM(totalAll);
+      totalAllTd.classList.toggle('warning', totalAll < 2400);
+
+      rows.forEach((row, idx) => {
+        const s = row.querySelector('.start').value;
+        const td = row.querySelector('.suggest');
+        if (!s) { td.textContent = '-'; return; }
+
+        const [sh,sm] = s.split(':').map(Number);
+        const startM = toMin(sh,sm);
+        let leaveM;
+
+        if (idx<4) {
+          leaveM = startM + (8*60+29);
+        } else {
+          const deficit = 2400 - totalThu;
+          const needed = Math.max(deficit, 240);
+          const extraBreak = (needed>=480?60:30);
+          leaveM = startM + needed + extraBreak;
+        }
+        td.textContent = fmtClock(leaveM);
+      });
+    }
+
+    document.querySelectorAll('input[type="time"]').forEach(i =>
+      i.addEventListener('change', calculateTime)
+    );
+
+    calculateTime();
+  </script>
+</body>
+</html>

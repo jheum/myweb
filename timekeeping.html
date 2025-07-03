@@ -4,39 +4,31 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>근무시간 계산기</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
   <style>
     body { font-family: sans-serif; padding: 2rem; background: #f6f6f6; }
     #controls { margin-bottom: 1rem; }
-    #controls input { width: 200px; padding: 0.25rem; }
+    #controls input, #controls select { width: 200px; padding: 0.25rem; }
     #controls button { margin-left: 0.5rem; padding: 0.5rem 1rem; }
     table { border-collapse: collapse; width: 100%; background: #fff; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
     th, td { padding: 0.75rem; border: 1px solid #ccc; text-align: center; vertical-align: middle; }
-    .input-group {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-    }
-    input[type="time"] {
-      width: 160px; text-align: center; font-size: 1rem;
-    }
-    .reset-btn {
-      padding: 2px 6px;
-      font-size: 0.8rem;
-      cursor: pointer;
-    }
-    tfoot td {
-      font-weight: bold;
-    }
-    .warning {
-      color: red;
-    }
+    .input-group { display: flex; align-items: center; justify-content: center; gap: 4px; }
+    input.flatpickr-input { width: 160px; text-align: center; font-size: 1rem; }
+    .reset-btn { padding: 2px 6px; font-size: 0.8rem; cursor: pointer; }
+    tfoot td { font-weight: bold; }
+    .warning { color: red; }
   </style>
 </head>
 <body>
   <div id="controls">
     <label><strong>사용자 ID:</strong>
       <input type="text" id="userId" placeholder="예: user123" />
+    </label>
+    <label><strong>시간 형식:</strong>
+      <select id="timeFormat">
+        <option value="24">24시간</option>
+        <option value="ampm">AM/PM</option>
+      </select>
     </label>
     <button onclick="loadUserData()">불러오기</button>
     <button onclick="saveUserData()">저장</button>
@@ -63,12 +55,9 @@
     </tfoot>
   </table>
 
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script>
-    const weekdays = ['월','화','수','목','금'];
-    const tbody = document.getElementById('work-table');
-    const totalAllTd = document.getElementById('totalAll');
-    const userIdInput = document.getElementById('userId');
-
+    // 1) 색 테마
     const colorThemes = [
       ['#fce4ec', '#f3e5f5', '#e1bee7'],
       ['#f1f8e9', '#dcedc8', '#c5e1a5'],
@@ -80,167 +69,214 @@
       ['#fffde7', '#fff59d', '#fff176'],
       ['#fbe9e7', '#ffccbc', '#ffab91']
     ];
-
-    function applyRandomTheme() {
-      const [thBg, suggestBg, totalBg] = colorThemes[Math.floor(Math.random() * colorThemes.length)];
-      document.querySelectorAll('th').forEach(th => th.style.background = thBg);
-      document.querySelectorAll('.suggestion-header').forEach(el => el.style.background = suggestBg);
-      document.querySelectorAll('tfoot td').forEach(td => td.style.background = totalBg);
+    function applyRandomTheme(){
+      const [thBg, suggestBg, totalBg] = colorThemes[Math.floor(Math.random()*colorThemes.length)];
+      document.querySelectorAll('th').forEach(th=>th.style.background=thBg);
+      document.querySelectorAll('.suggestion-header').forEach(el=>el.style.background=suggestBg);
+      document.querySelectorAll('tfoot td').forEach(td=>td.style.background=totalBg);
     }
 
-    weekdays.forEach((day, idx) => {
+    const weekdays = ['월','화','수','목','금'];
+    const tbody = document.getElementById('work-table');
+    const totalAllTd = document.getElementById('totalAll');
+    const userIdInput = document.getElementById('userId');
+    const formatSelect = document.getElementById('timeFormat');
+    let fpInstances = [];
+    let currentFormat = '24';
+
+    // 테이블 row 생성
+    weekdays.forEach((day, idx)=>{
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${day}</td>
-        <td>
-          <div class="input-group">
-            <input type="time" class="start" data-index="${idx}" />
-            <button class="reset-btn" onclick="clearInput(${idx}, 'start')">❌</button>
-          </div>
-        </td>
-        <td>
-          <div class="input-group">
-            <input type="time" class="end" data-index="${idx}" />
-            <button class="reset-btn" onclick="clearInput(${idx}, 'end')">❌</button>
-          </div>
-        </td>
+        <td><div class="input-group">
+          <input type="text" class="start" data-index="${idx}" readonly />
+          <button class="reset-btn" onclick="clearInput(${idx},'start')">❌</button>
+        </div></td>
+        <td><div class="input-group">
+          <input type="text" class="end" data-index="${idx}" readonly />
+          <button class="reset-btn" onclick="clearInput(${idx},'end')">❌</button>
+        </div></td>
         <td class="result">-</td>
         <td class="suggest suggestion-cell">-</td>
       `;
       tbody.appendChild(tr);
     });
 
-    function toMin(h,m){ return h*60 + m; }
-    function fmtHM(mins){
-      const h = Math.floor(mins/60), m = mins%60;
-      return `${h}시간 ${m}분`;
-    }
-    function fmtClock(mins){
-      mins %= 1440;
-      const h = String(Math.floor(mins/60)).padStart(2,'0'),
-            m = String(mins%60).padStart(2,'0');
-      return `${h}:${m}`;
+    // Flatpickr 초기화
+    function initTimePickers(){
+      fpInstances.forEach(fp=>fp.destroy());
+      fpInstances = [];
+      document.querySelectorAll('.input-group input').forEach(input=>{
+        const opts = { enableTime:true, noCalendar:true, onChange:calculateTime };
+        if(currentFormat==='ampm'){
+          opts.time_24hr=false; opts.dateFormat="h:i K";
+        } else {
+          opts.time_24hr=true; opts.dateFormat="H:i";
+        }
+        fpInstances.push(flatpickr(input, opts));
+      });
     }
 
-    function getUserId() {
+    // ID 가져오기
+    function getUserId(){
       const id = userIdInput.value.trim();
-      if (!/^[a-zA-Z0-9]+$/.test(id)) {
-        alert("ID는 영어 또는 숫자만 입력해주세요.");
-        return null;
-      }
+      if(!/^[a-zA-Z0-9]+$/.test(id)){ alert("ID는 영어 또는 숫자만 입력해주세요."); return null; }
       localStorage.setItem('lastUserId', id);
       return id;
     }
 
-    function saveUserData() {
-      const id = getUserId();
-      if (!id) return;
-      const data = [];
-      document.querySelectorAll('#work-table tr').forEach(row => {
-        data.push({
+    // 저장
+    function saveUserData(){
+      const id = getUserId(); if(!id) return;
+      const data = {
+        format: currentFormat,
+        work: Array.from(tbody.children).map(row=>({
           start: row.querySelector('.start').value,
           end:   row.querySelector('.end').value
-        });
-      });
-      localStorage.setItem('worklog_' + id, JSON.stringify(data));
+        }))
+      };
+      localStorage.setItem('worklog_'+id, JSON.stringify(data));
       alert('저장되었습니다.');
     }
 
-    function loadUserData() {
-      const id = getUserId();
-      if (!id) return;
-      const raw = localStorage.getItem('worklog_' + id);
-      if (!raw) {
-        alert('저장된 데이터가 없습니다.');
-        return;
+    // 불러오기
+    function loadUserData(){
+      const id = getUserId(); if(!id) return;
+      const raw = localStorage.getItem('worklog_'+id);
+      if(!raw){ alert('저장된 데이터가 없습니다.'); return; }
+      let obj;
+      try{ obj=JSON.parse(raw); } catch{ alert('데이터 형식이 올바르지 않습니다.'); return; }
+      if(obj.format){
+        currentFormat = obj.format;
+        formatSelect.value = obj.format;
       }
-      const data = JSON.parse(raw);
-      if (!Array.isArray(data) || data.length !== 5) {
-        alert('데이터 형식이 올바르지 않습니다.');
-        return;
-      }
-      document.querySelectorAll('#work-table tr').forEach((row,i) => {
-        row.querySelector('.start').value = data[i].start || '';
-        row.querySelector('.end').value   = data[i].end   || '';
+      initTimePickers();
+      obj.work.forEach((d,i)=>{
+        const row = tbody.children[i];
+        row.querySelector('.start').value = d.start||'';
+        row.querySelector('.end').value   = d.end||'';
       });
       calculateTime();
     }
 
-    function resetTimeInputs() {
-      document.querySelectorAll('#work-table input[type="time"]').forEach(input => input.value = '');
+    function resetTimeInputs(){
+      document.querySelectorAll('#work-table input').forEach(i=>i.value='');
+      calculateTime();
+    }
+    function clearInput(idx,type){
+      const i = document.querySelector(`input.${type}[data-index="${idx}"]`);
+      if(i) i.value='';
       calculateTime();
     }
 
-    function clearInput(index, type) {
-      const selector = `input.${type}[data-index="${index}"]`;
-      const input = document.querySelector(selector);
-      if (input) input.value = '';
-      calculateTime();
+    function toMin(h,m){ return h*60+m; }
+    function parseValue(val, fmt){
+      if(!val) return null;
+      const d = flatpickr.parseDate(val, fmt==='ampm'?"h:i K":"H:i");
+      return { h: d.getHours(), m: d.getMinutes() };
     }
 
+    function fmtHM(mins){
+      const h=Math.floor(mins/60), m=mins%60;
+      return `${h}시간 ${m}분`;
+    }
+    function fmtClock(mins){
+      mins%=1440;
+      const hh=String(Math.floor(mins/60)).padStart(2,'0'),
+            mm=String(mins%60).padStart(2,'0');
+      return `${hh}:${mm}`;
+    }
+
+    // 근무시간 계산
     function calculateTime(){
-      const rows = document.querySelectorAll('#work-table tr');
+      const rows = tbody.querySelectorAll('tr');
       const worked = [];
-
-      rows.forEach(row => {
-        const s = row.querySelector('.start').value;
-        const e = row.querySelector('.end').value;
-        const td = row.querySelector('.result');
-        let raw=0, br=0, w=0;
-
-        if (s && e) {
-          const [sh,sm] = s.split(':').map(Number);
-          const [eh,em] = e.split(':').map(Number);
-          raw = toMin(eh,em) - toMin(sh,sm);
-          if (raw<0) raw+=1440;
-          if (raw>=4*60) br++;
-          if (raw>=8*60+30) br++;
-          if (raw>=13*60) br++;
-          w = raw - br*30;
-          td.textContent = fmtHM(w);
-        } else td.textContent = '-';
-
+      rows.forEach(row=>{
+        const sVal=row.querySelector('.start').value;
+        const eVal=row.querySelector('.end').value;
+        const td=row.querySelector('.result');
+        let w=0;
+        const sh=parseValue(sVal, currentFormat);
+        const eh=parseValue(eVal, currentFormat);
+        if(sh&&eh){
+          let raw=toMin(eh.h,eh.m)-toMin(sh.h,sh.m);
+          if(raw<0) raw+=1440;
+          let br=0;
+          if(raw>=4*60) br++;
+          if(raw>=8*60+30) br++;
+          if(raw>=13*60) br++;
+          w=raw-br*30;
+          td.textContent=fmtHM(w);
+        } else td.textContent='-';
         worked.push(w);
       });
 
       const totalThu = worked.slice(0,4).reduce((a,b)=>a+b,0);
       const totalAll = worked.reduce((a,b)=>a+b,0);
-
       totalAllTd.textContent = fmtHM(totalAll);
-      totalAllTd.classList.toggle('warning', totalAll < 2400);
+      totalAllTd.classList.toggle('warning', totalAll<2400);
 
-      rows.forEach((row, idx) => {
-        const s = row.querySelector('.start').value;
-        const td = row.querySelector('.suggest');
-        if (!s) { td.textContent = '-'; return; }
-
-        const [sh,sm] = s.split(':').map(Number);
-        const startM = toMin(sh,sm);
+      rows.forEach((row,idx)=>{
+        const sVal=row.querySelector('.start').value;
+        const td=row.querySelector('.suggest');
+        if(!sVal){ td.textContent='-'; return; }
+        const sh=parseValue(sVal, currentFormat);
+        const startM=toMin(sh.h,sh.m);
         let leaveM;
-
-        if (idx<4) {
-          leaveM = startM + (8*60+29);
+        if(idx<4){
+          leaveM=startM+(8*60+29);
         } else {
-          const deficit = 2400 - totalThu;
-          const needed = Math.max(deficit, 240);
-          const extraBreak = (needed >= 480 ? 60 : 30);
-          leaveM = startM + needed + extraBreak;
+          const deficit=2400-totalThu;
+          const needed=Math.max(deficit,240);
+          const extraBreak=(needed>=480?60:30);
+          leaveM=startM+needed+extraBreak;
         }
-        td.textContent = fmtClock(leaveM);
+        td.textContent=fmtClock(leaveM);
       });
     }
 
-    document.querySelectorAll('input[type="time"]').forEach(i =>
-      i.addEventListener('change', calculateTime)
-    );
+    // 포맷 변경 시 값 변환
+    formatSelect.addEventListener('change', ()=>{
+      // 이전 포맷 보관
+      const oldFormat = currentFormat;
+      currentFormat = formatSelect.value;
+      // 각 입력값 변환
+      document.querySelectorAll('.input-group input').forEach(input=>{
+        const pv = parseValue(input.value, oldFormat);
+        if(pv){
+          if(currentFormat==='24'){
+            input.value = `${String(pv.h).padStart(2,'0')}:${String(pv.m).padStart(2,'0')}`;
+          } else {
+            let hh = pv.h % 12 || 12;
+            const ampm = pv.h<12?'AM':'PM';
+            input.value = `${hh}:${String(pv.m).padStart(2,'0')} ${ampm}`;
+          }
+        }
+      });
+      initTimePickers();
+      calculateTime();
+    });
 
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', ()=>{
       applyRandomTheme();
       const savedId = localStorage.getItem('lastUserId');
-      if (savedId) {
-        userIdInput.value = savedId;
-        loadUserData();
+      if(savedId){ userIdInput.value=savedId; }
+      // 저장된 포맷 복원
+      if(savedId){
+        const raw = localStorage.getItem('worklog_'+savedId);
+        if(raw){
+          try{
+            const obj = JSON.parse(raw);
+            if(obj.format){
+              currentFormat = obj.format;
+              formatSelect.value = obj.format;
+            }
+          }catch{}
+        }
       }
+      initTimePickers();
+      loadUserData();
       calculateTime();
     });
   </script>

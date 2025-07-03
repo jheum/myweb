@@ -170,9 +170,9 @@
           const [eh,em] = e.split(':').map(Number);
           raw = toMin(eh,em) - toMin(sh,sm);
           if (raw<0) raw+=1440;
-          if (raw>4*60) br++;
-          if (raw>8*60+30) br++;
-          if (raw>13*60) br++;
+          if (raw>=4*60) br++;
+          if (raw>=8*60+30) br++;
+          if (raw>=13*60) br++;
           w = raw - br*30;
           td.textContent = fmtHM(w);
         } else td.textContent = '-';

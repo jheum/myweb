@@ -11,7 +11,6 @@
     #controls button { margin-left: 0.5rem; padding: 0.5rem 1rem; }
     table { border-collapse: collapse; width: 100%; background: #fff; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
     th, td { padding: 0.75rem; border: 1px solid #ccc; text-align: center; vertical-align: middle; }
-    th { background: #e1f3e0; }
     .input-group {
       display: flex;
       align-items: center;
@@ -26,9 +25,12 @@
       font-size: 0.8rem;
       cursor: pointer;
     }
-    tfoot td { font-weight: bold; background: #d4edda; }
-    .suggestion { background: #fff3cd; }
-    .warning { color: red; }
+    tfoot td {
+      font-weight: bold;
+    }
+    .warning {
+      color: red;
+    }
   </style>
 </head>
 <body>
@@ -49,7 +51,7 @@
         <th>출근 시간</th>
         <th>퇴근 시간</th>
         <th>근무 시간<br><small>(휴게시간 제외)</small></th>
-        <th class="suggestion">추천 퇴근시간</th>
+        <th class="suggestion-header">퇴근 가능 시간</th>
       </tr>
     </thead>
     <tbody id="work-table"></tbody>
@@ -65,6 +67,26 @@
     const weekdays = ['월','화','수','목','금'];
     const tbody = document.getElementById('work-table');
     const totalAllTd = document.getElementById('totalAll');
+    const userIdInput = document.getElementById('userId');
+
+    const colorThemes = [
+      ['#fce4ec', '#f3e5f5', '#e1bee7'],
+      ['#f1f8e9', '#dcedc8', '#c5e1a5'],
+      ['#fff3e0', '#ffe0b2', '#ffcc80'],
+      ['#ede7f6', '#e8eaf6', '#d1c4e9'],
+      ['#f0f4c3', '#dce775', '#cddc39'],
+      ['#e0f7fa', '#b2ebf2', '#80deea'],
+      ['#f3e5f5', '#ce93d8', '#ba68c8'],
+      ['#fffde7', '#fff59d', '#fff176'],
+      ['#fbe9e7', '#ffccbc', '#ffab91']
+    ];
+
+    function applyRandomTheme() {
+      const [thBg, suggestBg, totalBg] = colorThemes[Math.floor(Math.random() * colorThemes.length)];
+      document.querySelectorAll('th').forEach(th => th.style.background = thBg);
+      document.querySelectorAll('.suggestion-header').forEach(el => el.style.background = suggestBg);
+      document.querySelectorAll('tfoot td').forEach(td => td.style.background = totalBg);
+    }
 
     weekdays.forEach((day, idx) => {
       const tr = document.createElement('tr');
@@ -83,7 +105,7 @@
           </div>
         </td>
         <td class="result">-</td>
-        <td class="suggest">-</td>
+        <td class="suggest suggestion-cell">-</td>
       `;
       tbody.appendChild(tr);
     });
@@ -101,11 +123,12 @@
     }
 
     function getUserId() {
-      const id = document.getElementById('userId').value.trim();
+      const id = userIdInput.value.trim();
       if (!/^[a-zA-Z0-9]+$/.test(id)) {
         alert("ID는 영어 또는 숫자만 입력해주세요.");
         return null;
       }
+      localStorage.setItem('lastUserId', id);
       return id;
     }
 
@@ -119,14 +142,14 @@
           end:   row.querySelector('.end').value
         });
       });
-      localStorage.setItem('worklog_'+id, JSON.stringify(data));
+      localStorage.setItem('worklog_' + id, JSON.stringify(data));
       alert('저장되었습니다.');
     }
 
     function loadUserData() {
       const id = getUserId();
       if (!id) return;
-      const raw = localStorage.getItem('worklog_'+id);
+      const raw = localStorage.getItem('worklog_' + id);
       if (!raw) {
         alert('저장된 데이터가 없습니다.');
         return;
@@ -200,7 +223,7 @@
         } else {
           const deficit = 2400 - totalThu;
           const needed = Math.max(deficit, 240);
-          const extraBreak = (needed>=480?60:30);
+          const extraBreak = (needed >= 480 ? 60 : 30);
           leaveM = startM + needed + extraBreak;
         }
         td.textContent = fmtClock(leaveM);
@@ -211,7 +234,15 @@
       i.addEventListener('change', calculateTime)
     );
 
-    calculateTime();
+    window.addEventListener('DOMContentLoaded', () => {
+      applyRandomTheme();
+      const savedId = localStorage.getItem('lastUserId');
+      if (savedId) {
+        userIdInput.value = savedId;
+        loadUserData();
+      }
+      calculateTime();
+    });
   </script>
 </body>
 </html>

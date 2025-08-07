@@ -15,8 +15,14 @@
     .input-group { display: flex; align-items: center; justify-content: center; gap: 4px; }
     input.flatpickr-input { width: 160px; text-align: center; font-size: 1rem; }
     .reset-btn { padding: 2px 6px; font-size: 0.8rem; cursor: pointer; }
+    .leave-boxes { display: inline-flex; gap: 4px; vertical-align: middle; margin-left: 8px; }
+    .leave-box { position: relative; width: 30px; height: 30px; line-height: 30px; border: 1px solid #666; border-radius: 4px; cursor: pointer; user-select: none; text-align: center; }
+    .leave-box.selected { background: #666; color: #fff; }
+    .leave-box .check { position: absolute; top: 2px; right: 4px; display: none; font-size: 14px; }
+    .leave-box.selected .check { display: block; }
     tfoot td { font-weight: bold; }
-    .warning { color: red; }
+    tfoot td.warning { color: red; }
+    .time.warning { color: red; }
   </style>
 </head>
 <body>
@@ -42,7 +48,7 @@
         <th>요일</th>
         <th>출근 시간</th>
         <th>퇴근 시간</th>
-        <th>근무 시간<br><small>(휴게시간 제외)</small></th>
+        <th>근무 시간<br><small>(휴게 시간 제외)</small></th>
         <th class="suggestion-header">퇴근 가능 시간</th>
       </tr>
     </thead>
@@ -57,37 +63,33 @@
 
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script>
-    // 1) 색 테마
+    // 색 테마 설정
     const colorThemes = [
-      ['#fce4ec', '#f3e5f5', '#e1bee7'],
-      ['#f1f8e9', '#dcedc8', '#c5e1a5'],
-      ['#fff3e0', '#ffe0b2', '#ffcc80'],
-      ['#ede7f6', '#e8eaf6', '#d1c4e9'],
-      ['#f0f4c3', '#dce775', '#cddc39'],
-      ['#e0f7fa', '#b2ebf2', '#80deea'],
-      ['#f3e5f5', '#ce93d8', '#ba68c8'],
-      ['#fffde7', '#fff59d', '#fff176'],
-      ['#fbe9e7', '#ffccbc', '#ffab91']
+      ['#fce4ec','#f3e5f5','#e1bee7'],['#f1f8e9','#dcedc8','#c5e1a5'],
+      ['#fff3e0','#ffe0b2','#ffcc80'],['#ede7f6','#e8eaf6','#d1c4e9'],
+      ['#f0f4c3','#dce775','#cddc39'],['#e0f7fa','#b2ebf2','#80deea'],
+      ['#f3e5f5','#ce93d8','#ba68c8'],['#fffde7','#fff59d','#fff176'],
+      ['#fbe9e7','#ffccbc','#ffab91']
     ];
     function applyRandomTheme(){
-      const [thBg, suggestBg, totalBg] = colorThemes[Math.floor(Math.random()*colorThemes.length)];
+      const [thBg,sBg,tBg] = colorThemes[Math.floor(Math.random()*colorThemes.length)];
       document.querySelectorAll('th').forEach(th=>th.style.background=thBg);
-      document.querySelectorAll('.suggestion-header').forEach(el=>el.style.background=suggestBg);
-      document.querySelectorAll('tfoot td').forEach(td=>td.style.background=totalBg);
+      document.querySelectorAll('.suggestion-header').forEach(el=>el.style.background=sBg);
+      document.querySelectorAll('tfoot td').forEach(td=>td.style.background=tBg);
     }
 
-    const weekdays = ['월','화','수','목','금'];
-    const tbody = document.getElementById('work-table');
-    const totalAllTd = document.getElementById('totalAll');
-    const userIdInput = document.getElementById('userId');
-    const formatSelect = document.getElementById('timeFormat');
-    let fpInstances = [];
-    let currentFormat = '24';
+    const weekdays=['월','화','수','목','금'];
+    const tbody=document.getElementById('work-table');
+    const totalAllTd=document.getElementById('totalAll');
+    const userIdInput=document.getElementById('userId');
+    const formatSelect=document.getElementById('timeFormat');
+    let fpInstances=[];
+    let currentFormat='24';
 
     // 테이블 row 생성
-    weekdays.forEach((day, idx)=>{
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
+    weekdays.forEach((day,idx)=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
         <td>${day}</td>
         <td><div class="input-group">
           <input type="text" class="start" data-index="${idx}" readonly />
@@ -97,188 +99,55 @@
           <input type="text" class="end" data-index="${idx}" readonly />
           <button class="reset-btn" onclick="clearInput(${idx},'end')">❌</button>
         </div></td>
-        <td class="result">-</td>
-        <td class="suggest suggestion-cell">-</td>
+        <td class="result">
+          <span class="time" data-index="${idx}">-</span>
+          <div class="leave-boxes">
+            <div class="leave-box" data-type="half" data-index="${idx}">반<span class="check">✔</span></div>
+            <div class="leave-box" data-type="full" data-index="${idx}">연<span class="check">✔</span></div>
+          </div>
+        </td>
+        <td class="suggestion-cell">-</td>
       `;
       tbody.appendChild(tr);
     });
 
-    // Flatpickr 초기화
     function initTimePickers(){
-      fpInstances.forEach(fp=>fp.destroy());
-      fpInstances = [];
+      fpInstances.forEach(fp=>fp.destroy()); fpInstances=[];
       document.querySelectorAll('.input-group input').forEach(input=>{
-        const opts = { enableTime:true, noCalendar:true, onChange:calculateTime };
-        if(currentFormat==='ampm'){
-          opts.time_24hr=false; opts.dateFormat="h:i K";
-        } else {
-          opts.time_24hr=true; opts.dateFormat="H:i";
-        }
-        fpInstances.push(flatpickr(input, opts));
+        const opts={enableTime:true,noCalendar:true,onChange:calculateTime};
+        if(currentFormat==='ampm'){ opts.time_24hr=false; opts.dateFormat="h:i K"; }
+        else { opts.time_24hr=true; opts.dateFormat="H:i"; }
+        fpInstances.push(flatpickr(input,opts));
       });
+      attachLeaveEvents();
     }
 
-    // ID 가져오기
-    function getUserId(){
-      const id = userIdInput.value.trim();
-      if(!/^[a-zA-Z0-9]+$/.test(id)){ alert("ID는 영어 또는 숫자만 입력해주세요."); return null; }
-      localStorage.setItem('lastUserId', id);
-      return id;
-    }
-
-    // 저장
-    function saveUserData(){
-      const id = getUserId(); if(!id) return;
-      const data = {
-        format: currentFormat,
-        work: Array.from(tbody.children).map(row=>({
-          start: row.querySelector('.start').value,
-          end:   row.querySelector('.end').value
-        }))
-      };
-      localStorage.setItem('worklog_'+id, JSON.stringify(data));
-      alert('저장되었습니다.');
-    }
-
-    // 불러오기
-    function loadUserData(){
-      const id = getUserId(); if(!id) return;
-      const raw = localStorage.getItem('worklog_'+id);
-      if(!raw){ alert('저장된 데이터가 없습니다.'); return; }
-      let obj;
-      try{ obj=JSON.parse(raw); } catch{ alert('데이터 형식이 올바르지 않습니다.'); return; }
-      if(obj.format){
-        currentFormat = obj.format;
-        formatSelect.value = obj.format;
-      }
-      initTimePickers();
-      obj.work.forEach((d,i)=>{
-        const row = tbody.children[i];
-        row.querySelector('.start').value = d.start||'';
-        row.querySelector('.end').value   = d.end||'';
-      });
-      calculateTime();
-    }
-
-    function resetTimeInputs(){
-      document.querySelectorAll('#work-table input').forEach(i=>i.value='');
-      calculateTime();
-    }
-    function clearInput(idx,type){
-      const i = document.querySelector(`input.${type}[data-index="${idx}"]`);
-      if(i) i.value='';
-      calculateTime();
-    }
-
-    function toMin(h,m){ return h*60+m; }
-    function parseValue(val, fmt){
-      if(!val) return null;
-      const d = flatpickr.parseDate(val, fmt==='ampm'?"h:i K":"H:i");
-      return { h: d.getHours(), m: d.getMinutes() };
-    }
-
-    function fmtHM(mins){
-      const h=Math.floor(mins/60), m=mins%60;
-      return `${h}시간 ${m}분`;
-    }
-    function fmtClock(mins){
-      mins%=1440;
-      const hh=String(Math.floor(mins/60)).padStart(2,'0'),
-            mm=String(mins%60).padStart(2,'0');
-      return `${hh}:${mm}`;
-    }
-
-    // 근무시간 계산
-    function calculateTime(){
-      const rows = tbody.querySelectorAll('tr');
-      const worked = [];
-      rows.forEach(row=>{
-        const sVal=row.querySelector('.start').value;
-        const eVal=row.querySelector('.end').value;
-        const td=row.querySelector('.result');
-        let w=0;
-        const sh=parseValue(sVal, currentFormat);
-        const eh=parseValue(eVal, currentFormat);
-        if(sh&&eh){
-          let raw=toMin(eh.h,eh.m)-toMin(sh.h,sh.m);
-          if(raw<0) raw+=1440;
-          let br=0;
-          if(raw>=4*60) br++;
-          if(raw>=8*60+30) br++;
-          if(raw>=13*60) br++;
-          w=raw-br*30;
-          td.textContent=fmtHM(w);
-        } else td.textContent='-';
-        worked.push(w);
-      });
-
-      const totalThu = worked.slice(0,4).reduce((a,b)=>a+b,0);
-      const totalAll = worked.reduce((a,b)=>a+b,0);
-      totalAllTd.textContent = fmtHM(totalAll);
-      totalAllTd.classList.toggle('warning', totalAll<2400);
-
-      rows.forEach((row,idx)=>{
-        const sVal=row.querySelector('.start').value;
-        const td=row.querySelector('.suggest');
-        if(!sVal){ td.textContent='-'; return; }
-        const sh=parseValue(sVal, currentFormat);
-        const startM=toMin(sh.h,sh.m);
-        let leaveM;
-        if(idx<4){
-          leaveM=startM+(8*60+29);
-        } else {
-          const deficit=2400-totalThu;
-          const needed=Math.max(deficit,240);
-          const extraBreak=(needed>=480?60:30);
-          leaveM=startM+needed+extraBreak;
-        }
-        td.textContent=fmtClock(leaveM);
-      });
-    }
-
-    // 포맷 변경 시 값 변환
-    formatSelect.addEventListener('change', ()=>{
-      // 이전 포맷 보관
-      const oldFormat = currentFormat;
-      currentFormat = formatSelect.value;
-      // 각 입력값 변환
-      document.querySelectorAll('.input-group input').forEach(input=>{
-        const pv = parseValue(input.value, oldFormat);
-        if(pv){
-          if(currentFormat==='24'){
-            input.value = `${String(pv.h).padStart(2,'0')}:${String(pv.m).padStart(2,'0')}`;
+    function attachLeaveEvents(){
+      document.querySelectorAll('.leave-box').forEach(box=>{
+        box.onclick=()=>{
+          const idx=box.getAttribute('data-index');
+          // toggle selection
+          if(box.classList.contains('selected')){
+            box.classList.remove('selected');
           } else {
-            let hh = pv.h % 12 || 12;
-            const ampm = pv.h<12?'AM':'PM';
-            input.value = `${hh}:${String(pv.m).padStart(2,'0')} ${ampm}`;
+            document.querySelectorAll(`.leave-box[data-index='${idx}']`).forEach(b=>b.classList.remove('selected'));
+            box.classList.add('selected');
           }
-        }
+          calculateTime();
+        };
       });
-      initTimePickers();
-      calculateTime();
-    });
+    }
 
-    window.addEventListener('DOMContentLoaded', ()=>{
-      applyRandomTheme();
-      const savedId = localStorage.getItem('lastUserId');
-      if(savedId){ userIdInput.value=savedId; }
-      // 저장된 포맷 복원
-      if(savedId){
-        const raw = localStorage.getItem('worklog_'+savedId);
-        if(raw){
-          try{
-            const obj = JSON.parse(raw);
-            if(obj.format){
-              currentFormat = obj.format;
-              formatSelect.value = obj.format;
-            }
-          }catch{}
-        }
-      }
-      initTimePickers();
-      loadUserData();
-      calculateTime();
-    });
+    function getUserId(){ const id=userIdInput.value.trim(); if(!/^[a-zA-Z0-9]+$/.test(id)){alert("ID는 영어 또는 숫자만 입력해주세요.");return null;} localStorage.setItem('lastUserId',id);return id; }
+    function saveUserData(){ const id=getUserId(); if(!id)return; const data={format:currentFormat, work:Array.from(tbody.children).map(row=>({start:row.querySelector('.start').value,end:row.querySelector('.end').value,leave:(row.querySelector('.leave-box.selected')?.getAttribute('data-type'))||'none'}))}; localStorage.setItem('worklog_'+id,JSON.stringify(data));alert('저장되었습니다.'); }
+    function loadUserData(){ const id=getUserId(); if(!id)return; const raw=localStorage.getItem('worklog_'+id); if(!raw){alert('저장된 데이터가 없습니다.');return;} let obj; try{obj=JSON.parse(raw);}catch{alert('데이터 형식이 올바르지 않습니다.');return;} if(obj.format){currentFormat=obj.format;formatSelect.value=obj.format;} initTimePickers(); obj.work.forEach((d,i)=>{ const row=tbody.children[i]; row.querySelector('.start').value=d.start||''; row.querySelector('.end').value=d.end||''; row.querySelectorAll('.leave-box').forEach(b=>b.classList.remove('selected')); if(d.leave!=='none') row.querySelector(`.leave-box[data-index='${i}'][data-type='${d.leave}']`).classList.add('selected'); }); calculateTime(); }
+    function resetTimeInputs(){ document.querySelectorAll('#work-table input').forEach(i=>i.value=''); document.querySelectorAll('.leave-box').forEach(b=>b.classList.remove('selected')); calculateTime(); }
+    function clearInput(idx,type){ const elem=document.querySelector(`input.${type}[data-index='${idx}']`); if(elem)elem.value=''; calculateTime(); }
+    function toMin(h,m){return h*60+m;} function parseValue(val,fmt){ if(!val) return null; const d=flatpickr.parseDate(val,fmt==='ampm'?"h:i K":"H:i"); return {h:d.getHours(),m:d.getMinutes()}; }
+    function fmtHM(mins){const h=Math.floor(mins/60),m=mins%60;return`${h}시간 ${m}분`;} function fmtClock(mins){mins%=1440;const hh=String(Math.floor(mins/60)).padStart(2,'0'),mm=String(mins%60).padStart(2,'0');return`${hh}:${mm}`;}
+    function calculateTime(){ const rows=tbody.querySelectorAll('tr'),worked=[]; rows.forEach(row=>{ const idx=row.querySelector('.time').getAttribute('data-index'); const sVal=row.querySelector('.start').value,eVal=row.querySelector('.end').value; const leaveType=row.querySelector('.leave-box.selected')?.getAttribute('data-type')||'none'; const timeSpan=row.querySelector('.time'); let w=0; const sh=parseValue(sVal,currentFormat),eh=parseValue(eVal,currentFormat); if(leaveType==='full'){w=480;}else if(sh&&eh){let raw=toMin(eh.h,eh.m)-toMin(sh.h,sh.m);if(raw<0)raw+=1440;let br=0;if(raw>=810)br=90;else if(raw>=540)br=60;else if(raw>=270)br=30;w=raw-br;if(leaveType==='half')w+=240;} timeSpan.textContent=w>0?fmtHM(w):'-';timeSpan.classList.toggle('warning',w>0&&w<240);worked[idx]=w; }); const totalAll=worked.reduce((a,b)=>a+(b||0),0); totalAllTd.textContent=fmtHM(totalAll);totalAllTd.classList.toggle('warning',totalAll<2400); rows.forEach((row,idx)=>{ const sVal=row.querySelector('.start').value; const td=row.querySelector('.suggestion-cell'); if(!sVal){td.textContent='-';return;} const sh=parseValue(sVal,currentFormat); const startM=toMin(sh.h,sh.m); let leaveM; if(idx<4){leaveM=startM+8*60+30;}else{const totalThu=worked.slice(0,4).reduce((a,b)=>a+(b||0),0);const deficit=2400-totalThu;const needed=Math.max(deficit,240);const extraBreak=needed>=480?60:30;leaveM=startM+needed+extraBreak;} td.textContent=fmtClock(leaveM);} ); }
+    formatSelect.addEventListener('change',()=>{ const old=currentFormat;currentFormat=formatSelect.value;document.querySelectorAll('.input-group input').forEach(input=>{const pv=parseValue(input.value,old);if(pv){if(currentFormat==='24')input.value=`${String(pv.h).padStart(2,'0')}:${String(pv.m).padStart(2,'0')}`;else{let hh=pv.h%12||12;const ampm=pv.h<12?'AM':'PM';input.value=`${hh}:${String(pv.m).padStart(2,'0')} ${ampm}`;}}});initTimePickers();calculateTime();});
+    window.addEventListener('DOMContentLoaded',()=>{applyRandomTheme();const sid=localStorage.getItem('lastUserId');if(sid)userIdInput.value=sid;if(sid&&localStorage.getItem('worklog_'+sid)){try{const obj=JSON.parse(localStorage.getItem('worklog_'+sid));if(obj.format){currentFormat=obj.format;formatSelect.value=obj.format;}}catch{}}initTimePickers();loadUserData();calculateTime();});
   </script>
 </body>
 </html>
